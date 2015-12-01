@@ -2,7 +2,7 @@ package main
 
 import "fmt"
 
-const BuilderId = "lmars.post-processor.vagrant-path"
+const BuilderId = "imagus.post-processor.vagrant-path"
 
 type Artifact struct {
 	Url string

@@ -12,9 +12,6 @@ import (
 	"strings"
 	"io/ioutil"
 
-	//"github.com/mitchellh/goamz/aws"
-	//"github.com/mitchellh/goamz/s3"
-	//awscommon "github.com/mitchellh/packer/builder/amazon/common"
 	"github.com/mitchellh/packer/common"
 	"github.com/mitchellh/packer/packer"
 	"github.com/mitchellh/packer/helper/config"
@@ -25,25 +22,17 @@ type Config struct {
 	common.PackerConfig    `mapstructure:",squash"`
 	
 	// Fields from config file
-	//Region       string `mapstructure:"region"`
-	//Bucket       string `mapstructure:"bucket"`
 	ManifestPath string `mapstructure:"manifest"`
 	BoxName      string `mapstructure:"box_name"`
 	BoxDir       string `mapstructure:"box_dir"`
 	Version      string `mapstructure:"version"`
 	Path		 string `mapstructure:"path"`
-	//ACL          s3.ACL `mapstructure:"acl"`
-
-	
-	//awscommon.AccessConfig `mapstructure:",squash"`
-	//tpl                    *packer.ConfigTemplate
 	
 	ctx interpolate.Context
 }
 
 type PostProcessor struct {
 	config Config
-	//s3     *s3.Bucket
 }
 
 func (p *PostProcessor) Configure(raws ...interface{}) error {
@@ -55,20 +44,11 @@ func (p *PostProcessor) Configure(raws ...interface{}) error {
 		return err
 	}
 
-	// p.config.tpl, err = packer.NewConfigTemplate()
-	// if err != nil {
-	// 	return err
-	// }
-	// p.config.tpl.UserVars = p.config.PackerUserVars
-
 	errs := &packer.MultiError{}
-
-	// errs = packer.MultiErrorAppend(errs, p.config.AccessConfig.Prepare(p.config.tpl)...)
 
 	// required configuration
 	templates := map[string]*string{
-		"path":   &p.config.Path,
-		//"bucket":   &p.config.Bucket,
+		"path":   	&p.config.Path,
 		"manifest": &p.config.ManifestPath,
 		"box_name": &p.config.BoxName,
 		"box_dir":  &p.config.BoxDir,
@@ -80,32 +60,6 @@ func (p *PostProcessor) Configure(raws ...interface{}) error {
 			errs = packer.MultiErrorAppend(errs, fmt.Errorf("vagrant-path %s must be set", key))
 		}
 	}
-
-	// Template process
-	// for key, ptr := range templates {
-	// 	*ptr, err = p.config.tpl.Process(*ptr, nil)
-	// 	if err != nil {
-	// 		errs = packer.MultiErrorAppend(errs, fmt.Errorf("Error processing %s: %s", key, err))
-	// 	}
-	// }
-
-	// setup the s3 bucket
-	// auth, err := aws.GetAuth(p.config.AccessConfig.AccessKey, p.config.AccessConfig.SecretKey)
-	// if err != nil {
-	// 	errs = packer.MultiErrorAppend(errs, err)
-	// }
-
-	// determine region
-	// region, valid := aws.Regions[p.config.Region]
-	// if valid {
-	// 	p.s3 = s3.New(auth, region).Bucket(p.config.Bucket)
-	// } else {
-	// 	errs = packer.MultiErrorAppend(errs, fmt.Errorf("Invalid region specified: %s", p.config.Region))
-	// }
-
-	// if p.config.ACL == "" {
-	// 	p.config.ACL = "public-read"
-	// }
 
 	if len(errs.Errors) > 0 {
 		return errs
@@ -152,7 +106,7 @@ func (p *PostProcessor) PostProcess(ui packer.Ui, artifact packer.Artifact) (pac
 	}
 
 	// generate the path to copy the box to the path
-	boxPath := fmt.Sprintf("%s/%s/%s", p.config.BoxDir, p.config.Version, path.Base(box))
+	boxPath := fmt.Sprintf("%s/%s/%s/%s", p.config.Path, p.config.BoxDir, p.config.Version, path.Base(box))
 
 	ui.Message("Generating checksum")
 	checksum, err := sum256(file)
@@ -164,7 +118,7 @@ func (p *PostProcessor) PostProcess(ui packer.Ui, artifact packer.Artifact) (pac
 	ui.Message(fmt.Sprintf("Adding %s %s box to manifest", provider, p.config.Version))
 	if err := manifest.add(p.config.Version, &Provider{
 		Name:         provider,
-		Url:          p.config.Path,
+		Url:          boxPath,
 		ChecksumType: "sha256",
 		Checksum:     checksum,
 	}); err != nil {
@@ -176,61 +130,50 @@ func (p *PostProcessor) PostProcess(ui packer.Ui, artifact packer.Artifact) (pac
 	if _, err := file.Seek(0, 0); err != nil {
 		return nil, false, err
 	}
-	// if size > 100*1024*1024 {
-	// 	ui.Message("File size > 100MB. Initiating multipart upload")
-	// 	multi, err := p.s3.Multi(boxPath, "application/octet-stream", p.config.ACL)
-	// 	if err != nil {
-	// 		return nil, false, err
-	// 	}
-
-	// 	parts, err := multi.PutAll(file, 5*1024*1024)
-	// 	if err != nil {
-	// 		return nil, false, err
-	// 	}
-
-	// 	if err := multi.Complete(parts); err != nil {
-	// 		return nil, false, err
-	// 	}
-	// } else {
-	// 	if err := p.s3.PutReader(boxPath, file, size, "application/octet-stream", p.config.ACL); err != nil {
-	// 		return nil, false, err
-	// 	}
-	// }
 	
+	ui.Message(fmt.Sprintf("Opening box"))
 	in, err := os.Open(box)
     if err != nil { 
 		return nil, false, err
 	}
     defer in.Close()
 	
+	ui.Message(fmt.Sprintf("Creating directories"))
+	err = os.MkdirAll(path.Dir(boxPath),0777)
+	if err != nil {
+		return nil, false, err
+	}
+	
+	ui.Message(fmt.Sprintf("Creating box copy"))
     out, err := os.Create(boxPath)
     if err != nil {
 		return nil, false, err
 	}
     defer out.Close()
 	
+	ui.Message(fmt.Sprintf("Copying box"))
     _, err = io.Copy(out, in)
     cerr := out.Close()
     if err != nil { 
 		return nil, false, err
 	}
-    return nil, false, cerr
-
+	if cerr != nil {
+		return nil, false, cerr
+	}
+    
 	ui.Message(fmt.Sprintf("Uploading the manifest: %s", p.config.ManifestPath))
 	if err := p.putManifest(manifest); err != nil {
 		return nil, false, err
 	}
 
-	
-
-	//return &Artifact{p.s3.URL(p.config.ManifestPath)}, true, nil
 	return &Artifact{p.config.ManifestPath}, true, nil
 }
 
 func (p *PostProcessor) getManifest() (*Manifest, error) {	
 	if _, err := os.Stat(p.config.ManifestPath); err == nil {
-		//body, err := ioutil.ReadFile(p.config.ManifestPath)
-		file, err := os.Open(p.config.ManifestPath)
+		manifestPath := fmt.Sprintf("%s/%s", p.config.Path, p.config.ManifestPath)
+		err = os.MkdirAll(path.Dir(manifestPath),0777)
+		file, err := os.Open(manifestPath)
 		if err != nil {
 			return nil, err
 		}
@@ -245,37 +188,20 @@ func (p *PostProcessor) getManifest() (*Manifest, error) {
 }
 
 func (p *PostProcessor) putManifest(manifest *Manifest) error {
-	// var buf bytes.Buffer
-	// if err := json.NewEncoder(&buf).Encode(manifest); err != nil {
-	// 	return err
-	// }
-	// if err := p.s3.Put(p.config.ManifestPath, buf.Bytes(), "application/json", p.config.ACL); err != nil {
-	// 	return err
-	// }
-	// return nil
-	
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(manifest); err != nil {
 		return err
 	}
 	
-	err := ioutil.WriteFile(p.config.ManifestPath, buf.Bytes(), 0644)
+	manifestPath := fmt.Sprintf("%s/%s", p.config.Path, p.config.ManifestPath)
+	err := os.MkdirAll(path.Dir(manifestPath),0777)
+	
+	err = ioutil.WriteFile(manifestPath, buf.Bytes(), 0644)
 	if err != nil {
 		return err
 	}
 	
 	return nil
-	
-	// in, err := os.Open(manifest)
-    // if err != nil { return err }
-    // defer in.Close()
-    // out, err := os.Create(p.config.ManifestPath)
-    // if err != nil { return err }
-    // defer out.Close()
-    // _, err = io.Copy(out, in)
-    // cerr := out.Close()
-    // if err != nil { return err }
-    // return cerr
 }
 
 // calculates a sha256 checksum of the file
