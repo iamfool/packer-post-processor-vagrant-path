@@ -27,6 +27,8 @@ type Config struct {
 	BoxDir       string `mapstructure:"box_dir"`
 	Version      string `mapstructure:"version"`
 	Path		 string `mapstructure:"path"`
+	SshUsername	 string `mapstructure:"ssh_username"`
+	SshPassword	 string `mapstructure:"ssh_password"` 
 	
 	ctx interpolate.Context
 }
