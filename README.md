@@ -14,8 +14,8 @@ Installation
 go get github.com/Imagus/packer-post-processor-vagrant-path
 ```
 5. Copy the plugin to one of the directories [outlined here](https://www.packer.io/docs/extend/plugins.html).
-  * On a *nix system: `cp $GOPATH/bin/packer-post-processor-vagrant-s3 <your_target_directory>`
-  * On Windows: `copy %GOPATH%/bin/packer-post-processor-vagrant-s3.exe <your_target_directory>`
+  * On a *nix system: `cp $GOPATH/bin/packer-post-processor-vagrant-path <your_target_directory>`
+  * On Windows: `copy %GOPATH%/bin/packer-post-processor-vagrant-path.exe <your_target_directory>`
     
 Usage
 -----
